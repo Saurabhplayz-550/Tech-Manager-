@@ -1,0 +1,6 @@
+{
+  "name": "Tech Manager",
+  "description": "Local file manager and archive utility for browsing, compressing, and extracting files.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
