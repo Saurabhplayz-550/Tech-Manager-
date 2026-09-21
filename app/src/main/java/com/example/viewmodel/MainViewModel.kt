@@ -19,6 +19,8 @@ import com.example.model.SortField
 import com.example.model.SortOrder
 import com.example.model.StorageBreakdown
 import com.example.model.ViewMode
+import com.example.transfer.TransferManager
+import com.example.transfer.TransferMode
 import com.example.util.ArchiveManager
 import com.example.util.FileFormatter
 import kotlinx.coroutines.Dispatchers
@@ -89,6 +91,7 @@ data class UiState(
     val fileToPreview: FileItem? = null,
     val showStorageAnalysisScreen: Boolean = false,
     val showBookmarksScreen: Boolean = false,
+    val showWifiShareScreen: Boolean = false,
     val bookmarkedFiles: List<FileItem> = emptyList(),
 
     // Progress
@@ -111,12 +114,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             repository.initializeSampleFilesIfNeeded()
-            val initialDir = File(application.filesDir, "Internal Storage")
-            val targetDir = if (initialDir.exists()) initialDir else repository.rootStorageDirectory
+            val targetDir = repository.rootStorageDirectory
             _uiState.update { it.copy(currentDirectory = targetDir) }
             refreshDirectory(targetDir)
             refreshDashboard()
         }
+    }
+
+    fun onStoragePermissionGranted() {
+        val root = repository.rootStorageDirectory
+        _uiState.update { it.copy(currentDirectory = root) }
+        refreshDirectory(root)
+        refreshDashboard()
+        loadAllArchives()
     }
 
     fun setTab(tab: NavTab) {
@@ -708,6 +718,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val breakdown = repository.getStorageBreakdown()
             _uiState.update { it.copy(storageBreakdown = breakdown) }
+        }
+    }
+
+    val transferManager = TransferManager(application, viewModelScope)
+
+    fun openWifiShare(mode: TransferMode, files: List<File> = emptyList()) {
+        _uiState.update { it.copy(showWifiShareScreen = true) }
+        if (mode == TransferMode.RECEIVE) {
+            transferManager.startReceiveMode()
+        } else {
+            transferManager.startSendMode(files)
+        }
+    }
+
+    fun closeWifiShare() {
+        transferManager.stopAll()
+        _uiState.update { it.copy(showWifiShareScreen = false) }
+        viewModelScope.launch {
+            _uiState.value.currentDirectory?.let { refreshDirectory(it) }
+            refreshDashboard()
         }
     }
 

@@ -28,4 +28,7 @@ interface FileTrackingDao {
 
     @Query("DELETE FROM file_tracking WHERE path = :path")
     suspend fun deleteTracking(path: String)
+
+    @Query("DELETE FROM file_tracking WHERE path LIKE :pathPrefix || '%'")
+    suspend fun deleteTrackingByPrefix(pathPrefix: String)
 }

@@ -35,86 +35,17 @@ class FileManagerRepository(
     val rootStorageDirectory: File
         get() {
             val ext = Environment.getExternalStorageDirectory()
-            return if (ext.exists() && ext.canRead()) ext else context.filesDir
+            return if (ext.exists()) ext else context.filesDir
         }
 
     suspend fun initializeSampleFilesIfNeeded() = withContext(Dispatchers.IO) {
         try {
-            // Seed a realistic local folder structure in the app's accessible root or documents
-            val baseDir = File(context.filesDir, "Internal Storage").apply { mkdirs() }
-            val downloadDir = File(baseDir, "Download").apply { mkdirs() }
-            val documentsDir = File(baseDir, "Documents").apply { mkdirs() }
-            val picturesDir = File(baseDir, "Pictures").apply { mkdirs() }
-            val musicDir = File(baseDir, "Music").apply { mkdirs() }
-            val moviesDir = File(baseDir, "Movies").apply { mkdirs() }
-            val androidDir = File(baseDir, "Android").apply { mkdirs() }
-            val dcimDir = File(baseDir, "DCIM").apply { mkdirs() }
-
-            // Create sample files if empty
-            val projectZip = File(downloadDir, "Project_Design.zip")
-            if (!projectZip.exists()) {
-                ZipOutputStream(FileOutputStream(projectZip)).use { zos ->
-                    val entry1 = ZipEntry("Assets/logo.svg")
-                    zos.putNextEntry(entry1)
-                    zos.write("<svg width='100' height='100'><rect fill='#0066FF' width='100' height='100'/></svg>".toByteArray())
-                    zos.closeEntry()
-
-                    val entry2 = ZipEntry("Documents/README.txt")
-                    zos.putNextEntry(entry2)
-                    zos.write("Tech Manager - Project Design Assets and Docs.\nClean, lightweight and fast.".toByteArray())
-                    zos.closeEntry()
-
-                    val entry3 = ZipEntry("config.json")
-                    zos.putNextEntry(entry3)
-                    zos.write("{\"version\": \"1.0.0\", \"app\": \"Tech Manager\"}".toByteArray())
-                    zos.closeEntry()
-                }
-                projectZip.setLastModified(System.currentTimeMillis() - 2 * 3600 * 1000L)
+            // Remove any old sample files directory completely so sample files are never shown
+            val sampleBaseDir = File(context.filesDir, "Internal Storage")
+            if (sampleBaseDir.exists()) {
+                sampleBaseDir.deleteRecursively()
             }
-
-            val notesPdf = File(documentsDir, "Notes.pdf")
-            if (!notesPdf.exists()) {
-                notesPdf.writeText("%PDF-1.4\n%Tech Manager Project Notes\nDocument contents with specifications.")
-                notesPdf.setLastModified(System.currentTimeMillis() - 24 * 3600 * 1000L)
-            }
-
-            val movieMp4 = File(moviesDir, "Movie.mp4")
-            if (!movieMp4.exists()) {
-                movieMp4.writeBytes(ByteArray(1024 * 16) { 0 })
-                movieMp4.setLastModified(System.currentTimeMillis() - 5 * 3600 * 1000L)
-            }
-
-            val workZip = File(documentsDir, "Work_Archive.zip")
-            if (!workZip.exists()) {
-                ZipOutputStream(FileOutputStream(workZip)).use { zos ->
-                    val entry = ZipEntry("report.txt")
-                    zos.putNextEntry(entry)
-                    zos.write("Quarterly Tech Manager storage report".toByteArray())
-                    zos.closeEntry()
-                }
-                workZip.setLastModified(System.currentTimeMillis() - 48 * 3600 * 1000L)
-            }
-
-            val sampleBackup7z = File(downloadDir, "Backup.7z")
-            if (!sampleBackup7z.exists()) {
-                sampleBackup7z.writeBytes(ByteArray(1024 * 8) { 7 })
-                sampleBackup7z.setLastModified(System.currentTimeMillis() - 72 * 3600 * 1000L)
-            }
-
-            val sampleApk = File(downloadDir, "TechTools.apk")
-            if (!sampleApk.exists()) {
-                sampleApk.writeBytes(ByteArray(1024 * 32) { 1 })
-                sampleApk.setLastModified(System.currentTimeMillis() - 12 * 3600 * 1000L)
-            }
-
-            val sampleAudio = File(musicDir, "Acoustic_Melody.mp3")
-            if (!sampleAudio.exists()) {
-                sampleAudio.writeBytes(ByteArray(1024 * 20) { 2 })
-                sampleAudio.setLastModified(System.currentTimeMillis() - 15 * 3600 * 1000L)
-            }
-
-            // Register these initial items in tracking with genuine timestamps
-            scanAndRecordTracking(baseDir)
+            fileTrackingDao.deleteTrackingByPrefix(sampleBaseDir.absolutePath)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -497,7 +428,7 @@ class FileManagerRepository(
         }
         scanDir(context.filesDir)
         val ext = Environment.getExternalStorageDirectory()
-        if (ext.exists() && ext.canRead()) {
+        if (ext.exists()) {
             scanDir(ext)
         }
         archives.sortedByDescending { it.lastModified }
@@ -531,9 +462,8 @@ class FileManagerRepository(
                 }
             }
         }
-        scanDir(context.filesDir)
         val ext = Environment.getExternalStorageDirectory()
-        if (ext.exists() && ext.canRead()) {
+        if (ext.exists()) {
             scanDir(ext)
         }
         result.sortedByDescending { it.lastModified }
@@ -552,7 +482,10 @@ class FileManagerRepository(
                 }
             }
         }
-        scanDir(context.filesDir)
+        val ext = Environment.getExternalStorageDirectory()
+        if (ext.exists()) {
+            scanDir(ext)
+        }
         all.sortedByDescending { it.lastModified }.take(limit)
     }
 
@@ -573,7 +506,10 @@ class FileManagerRepository(
                 }
             }
         }
-        scanDir(context.filesDir)
+        val ext = Environment.getExternalStorageDirectory()
+        if (ext.exists()) {
+            scanDir(ext)
+        }
         all.sortedByDescending { it.addedDate ?: 0L }.take(limit)
     }
 
@@ -622,7 +558,10 @@ class FileManagerRepository(
                 }
             }
         }
-        scanForStats(context.filesDir)
+        val ext = Environment.getExternalStorageDirectory()
+        if (ext.exists()) {
+            scanForStats(ext)
+        }
 
         val largest = allFiles.sortedByDescending { it.size }.take(10)
 

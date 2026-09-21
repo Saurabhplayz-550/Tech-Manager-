@@ -53,10 +53,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -83,11 +87,13 @@ import com.example.ui.components.OperationSuccessDialog
 import com.example.ui.components.RenameDialog
 import com.example.ui.components.SearchOverlay
 import com.example.ui.screens.ArchivesScreen
+import com.example.transfer.TransferMode
 import com.example.ui.screens.CategoriesScreen
 import com.example.ui.screens.FileBrowserScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.MoreScreen
 import com.example.ui.screens.StorageAnalysisScreen
+import com.example.ui.screens.WifiShareScreen
 import com.example.ui.theme.TechBlueLight
 import com.example.ui.theme.TechBluePrimary
 import com.example.ui.theme.TechManagerTheme
@@ -113,7 +119,35 @@ class MainActivity : ComponentActivity() {
                 val permissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
                 ) {
-                    hasStoragePermission = checkStoragePermission()
+                    val granted = checkStoragePermission()
+                    hasStoragePermission = granted
+                    if (granted) {
+                        viewModel.onStoragePermissionGranted()
+                    }
+                }
+
+                // Prompt user for storage permission immediately upon entering the app
+                LaunchedEffect(Unit) {
+                    if (!checkStoragePermission()) {
+                        requestStoragePermission(permissionLauncher)
+                    }
+                }
+
+                DisposableEffect(this@MainActivity) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            val granted = checkStoragePermission()
+                            val wasGranted = hasStoragePermission
+                            hasStoragePermission = granted
+                            if (granted) {
+                                viewModel.onStoragePermissionGranted()
+                            }
+                        }
+                    }
+                    lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycle.removeObserver(observer)
+                    }
                 }
 
                 // Document Picker for Import
@@ -149,7 +183,14 @@ class MainActivity : ComponentActivity() {
                         if (!uiState.showStorageAnalysisScreen && !uiState.isSearchOpen) {
                             val title = when (uiState.currentTab) {
                                 NavTab.FILES -> "Tech Manager"
-                                NavTab.STORAGE -> uiState.currentDirectory?.name ?: "Internal Storage"
+                                NavTab.STORAGE -> {
+                                    val dir = uiState.currentDirectory
+                                    if (dir == null || dir.name.isEmpty() || dir.name == "0" || dir.name == "emulated") {
+                                        "Internal Storage"
+                                    } else {
+                                        dir.name
+                                    }
+                                }
                                 NavTab.ARCHIVES -> "Archives"
                                 NavTab.CATEGORIES -> if (uiState.selectedCategory != null) uiState.selectedCategory!!.title else "Categories"
                                 NavTab.MORE -> "More"
@@ -184,8 +225,13 @@ class MainActivity : ComponentActivity() {
                                     viewModel.showDeleteDialog(files)
                                 },
                                 onShareSelected = {
-                                    val firstFile = uiState.currentFiles.firstOrNull { uiState.selectedFilePaths.contains(it.path) }
-                                    if (firstFile != null) viewModel.shareFile(firstFile)
+                                    val selected = uiState.currentFiles
+                                        .filter { uiState.selectedFilePaths.contains(it.path) }
+                                        .map { File(it.path) }
+                                    if (selected.isNotEmpty()) {
+                                        viewModel.openWifiShare(TransferMode.SEND, selected)
+                                        viewModel.clearSelection()
+                                    }
                                 },
                                 onCompressSelected = {
                                     val files = uiState.currentFiles.filter { uiState.selectedFilePaths.contains(it.path) }
@@ -413,8 +459,12 @@ class MainActivity : ComponentActivity() {
                                 NavTab.FILES -> {
                                     HomeScreen(
                                         uiState = uiState,
+                                        hasStoragePermission = hasStoragePermission,
+                                        onRequestPermission = {
+                                            requestStoragePermission(permissionLauncher)
+                                        },
                                         onStorageCardClick = {
-                                            viewModel.setTab(NavTab.STORAGE)
+                                            viewModel.openRootStorage()
                                         },
                                         onCategoryClick = { cat ->
                                             viewModel.openCategory(cat)
@@ -430,12 +480,18 @@ class MainActivity : ComponentActivity() {
                                         onPropertiesFile = { item -> viewModel.showPropertiesDialog(item) },
                                         onToggleBookmark = { item -> viewModel.toggleBookmark(item) },
                                         onExtractFile = { item -> viewModel.showExtractDialog(item) },
-                                        onCompressFile = { item -> viewModel.showCompressDialog(listOf(item)) }
+                                        onCompressFile = { item -> viewModel.showCompressDialog(listOf(item)) },
+                                        onSendFilesClick = { viewModel.openWifiShare(TransferMode.SEND) },
+                                        onReceiveFilesClick = { viewModel.openWifiShare(TransferMode.RECEIVE) }
                                     )
                                 }
                                 NavTab.STORAGE -> {
                                     FileBrowserScreen(
                                         uiState = uiState,
+                                        hasStoragePermission = hasStoragePermission,
+                                        onRequestPermission = {
+                                            requestStoragePermission(permissionLauncher)
+                                        },
                                         onNavigateTo = { dir -> viewModel.navigateTo(dir) },
                                         onFileClick = { item -> handleFileClick(item, viewModel) },
                                         onFileLongClick = { item -> viewModel.toggleSelection(item.path) },
@@ -503,10 +559,14 @@ class MainActivity : ComponentActivity() {
                                 NavTab.MORE -> {
                                     MoreScreen(
                                         uiState = uiState,
+                                        onRequestStoragePermission = {
+                                            requestStoragePermission(permissionLauncher)
+                                        },
                                         onNavigateToStorageAnalysis = { viewModel.showStorageAnalysis(true) },
                                         onNavigateToBookmarks = {
                                             viewModel.showBookmarks(true)
                                         },
+                                        onNavigateToWifiShare = { viewModel.openWifiShare(TransferMode.SEND) },
                                         onToggleShowHidden = { viewModel.toggleHiddenFiles(!uiState.showHiddenFiles) },
                                         onToggleConfirmDelete = { viewModel.toggleConfirmBeforeDelete(!uiState.confirmBeforeDelete) },
                                         onToggleShowAddedDate = { viewModel.toggleShowAddedDate(!uiState.showAddedDate) },
@@ -543,6 +603,19 @@ class MainActivity : ComponentActivity() {
                                 onItemClick = { item ->
                                     viewModel.closeSearch()
                                     handleFileClick(item, viewModel)
+                                }
+                            )
+                        }
+
+                        // Fast Share (Wi-Fi / Hotspot) Screen Overlay
+                        if (uiState.showWifiShareScreen) {
+                            WifiShareScreen(
+                                transferManager = viewModel.transferManager,
+                                onBack = { viewModel.closeWifiShare() },
+                                onPickMoreFiles = {
+                                    viewModel.closeWifiShare()
+                                    viewModel.setTab(NavTab.STORAGE)
+                                    viewModel.startSelectionMode()
                                 }
                             )
                         }

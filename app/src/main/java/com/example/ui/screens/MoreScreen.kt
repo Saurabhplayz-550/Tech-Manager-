@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
@@ -59,8 +60,10 @@ import com.example.viewmodel.UiState
 @Composable
 fun MoreScreen(
     uiState: UiState,
+    onRequestStoragePermission: () -> Unit,
     onNavigateToStorageAnalysis: () -> Unit,
     onNavigateToBookmarks: () -> Unit,
+    onNavigateToWifiShare: () -> Unit = {},
     onToggleShowHidden: () -> Unit,
     onToggleConfirmDelete: () -> Unit,
     onToggleShowAddedDate: () -> Unit,
@@ -91,6 +94,13 @@ fun MoreScreen(
             ) {
                 Column {
                     MoreClickableItem(
+                        icon = Icons.Default.Security,
+                        title = "Storage Permission (All Files)",
+                        subtitle = "Grant full access to browse real files on your device",
+                        onClick = onRequestStoragePermission
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    MoreClickableItem(
                         icon = Icons.Default.PieChart,
                         title = "Storage Analysis",
                         subtitle = "Detailed storage breakdown and largest files",
@@ -102,6 +112,13 @@ fun MoreScreen(
                         title = "Bookmarks",
                         subtitle = "${uiState.bookmarkedFiles.size} bookmarked items",
                         onClick = onNavigateToBookmarks
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    MoreClickableItem(
+                        icon = Icons.Default.WifiTethering,
+                        title = "Fast Share (Wi-Fi / Hotspot)",
+                        subtitle = "Send & receive files directly via QR code or 6-digit code",
+                        onClick = onNavigateToWifiShare
                     )
                 }
             }
