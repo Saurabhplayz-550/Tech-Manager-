@@ -22,7 +22,11 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,6 +75,7 @@ fun MainTopBar(
     onCompressSelected: () -> Unit,
     onMenuClick: () -> Unit,
     onStartSelection: () -> Unit = {},
+    onConfirmSelection: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showSortMenu by remember { mutableStateOf(false) }
@@ -95,17 +100,17 @@ fun MainTopBar(
                 }
             },
             actions = {
+                IconButton(onClick = onSelectAll) {
+                    Icon(
+                        imageVector = Icons.Default.SelectAll,
+                        contentDescription = "Select All",
+                        tint = Color.White
+                    )
+                }
                 IconButton(onClick = onCopySelected) {
                     Icon(
                         imageVector = Icons.Default.ContentCopy,
                         contentDescription = "Copy",
-                        tint = Color.White
-                    )
-                }
-                IconButton(onClick = onCutSelected) {
-                    Icon(
-                        imageVector = Icons.Default.ContentCut,
-                        contentDescription = "Cut",
                         tint = Color.White
                     )
                 }
@@ -116,25 +121,29 @@ fun MainTopBar(
                         tint = Color.White
                     )
                 }
-                IconButton(onClick = onShareSelected) {
+                // Prominent OK button to confirm selection / share
+                Button(
+                    onClick = onConfirmSelection,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = TechBluePrimary
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.testTag("selection_top_ok_button")
+                ) {
                     Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = "Share",
-                        tint = Color.White
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Confirm",
+                        modifier = Modifier.size(16.dp),
+                        tint = TechBluePrimary
                     )
-                }
-                IconButton(onClick = onCompressSelected) {
-                    Icon(
-                        imageVector = Icons.Default.Archive,
-                        contentDescription = "Compress",
-                        tint = Color.White
-                    )
-                }
-                IconButton(onClick = onSelectAll) {
-                    Icon(
-                        imageVector = Icons.Default.SelectAll,
-                        contentDescription = "Select All",
-                        tint = Color.White
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "OK",
+                        fontWeight = FontWeight.Bold,
+                        color = TechBluePrimary,
+                        style = MaterialTheme.typography.labelLarge
                     )
                 }
             },

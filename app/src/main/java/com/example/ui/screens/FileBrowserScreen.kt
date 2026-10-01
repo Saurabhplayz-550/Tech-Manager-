@@ -254,7 +254,13 @@ fun FileBrowserScreen(
                         isSelected = isSelected,
                         isSelectionMode = uiState.isSelectionMode,
                         onClick = {
-                            if (item.isDirectory) onNavigateTo(File(item.path)) else onFileClick(item)
+                            if (uiState.isSelectionMode) {
+                                onFileLongClick(item)
+                            } else if (item.isDirectory) {
+                                onNavigateTo(File(item.path))
+                            } else {
+                                onFileClick(item)
+                            }
                         },
                         onLongClick = { onFileLongClick(item) }
                     )
@@ -276,7 +282,13 @@ fun FileBrowserScreen(
                         showAddedDate = uiState.showAddedDate,
                         showModifiedDate = uiState.showModifiedDate,
                         onClick = {
-                            if (item.isDirectory) onNavigateTo(File(item.path)) else onFileClick(item)
+                            if (uiState.isSelectionMode) {
+                                onFileLongClick(item)
+                            } else if (item.isDirectory) {
+                                onNavigateTo(File(item.path))
+                            } else {
+                                onFileClick(item)
+                            }
                         },
                         onLongClick = { onFileLongClick(item) },
                         onShare = { onShareFile(item) },

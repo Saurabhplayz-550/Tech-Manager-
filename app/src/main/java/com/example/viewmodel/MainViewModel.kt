@@ -92,6 +92,7 @@ data class UiState(
     val showStorageAnalysisScreen: Boolean = false,
     val showBookmarksScreen: Boolean = false,
     val showWifiShareScreen: Boolean = false,
+    val showMcpScreen: Boolean = false,
     val bookmarkedFiles: List<FileItem> = emptyList(),
 
     // Progress
@@ -257,8 +258,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(isSelectionMode = true) }
     }
 
+    fun getSelectedFiles(): List<FileItem> {
+        val selectedPaths = _uiState.value.selectedFilePaths
+        return selectedPaths.mapNotNull { path ->
+            _uiState.value.currentFiles.find { it.path == path }
+                ?: _uiState.value.categoryFiles.find { it.path == path }
+                ?: _uiState.value.recentFiles.find { it.path == path }
+                ?: run {
+                    val f = File(path)
+                    if (f.exists()) {
+                        FileItem(
+                            id = f.absolutePath,
+                            name = f.name,
+                            path = f.absolutePath,
+                            isDirectory = f.isDirectory,
+                            size = if (f.isDirectory) 0L else f.length(),
+                            lastModified = f.lastModified(),
+                            extension = f.extension
+                        )
+                    } else null
+                }
+        }
+    }
+
     fun selectAll() {
-        val allPaths = _uiState.value.currentFiles.map { it.path }.toSet()
+        val allPaths = if (_uiState.value.currentTab == NavTab.CATEGORIES && _uiState.value.selectedCategory != null) {
+            _uiState.value.categoryFiles.map { it.path }.toSet()
+        } else {
+            _uiState.value.currentFiles.map { it.path }.toSet()
+        }
         _uiState.update {
             it.copy(selectedFilePaths = allPaths, isSelectionMode = true)
         }
@@ -739,6 +767,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value.currentDirectory?.let { refreshDirectory(it) }
             refreshDashboard()
         }
+    }
+
+    fun openMcpScreen() {
+        _uiState.update { it.copy(showMcpScreen = true) }
+    }
+
+    fun closeMcpScreen() {
+        _uiState.update { it.copy(showMcpScreen = false) }
     }
 
     // UI Dialog Triggers

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
@@ -94,6 +95,7 @@ import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.MoreScreen
 import com.example.ui.screens.StorageAnalysisScreen
 import com.example.ui.screens.WifiShareScreen
+import com.example.ui.screens.McpConnectorScreen
 import com.example.ui.theme.TechBlueLight
 import com.example.ui.theme.TechBluePrimary
 import com.example.ui.theme.TechManagerTheme
@@ -128,6 +130,9 @@ class MainActivity : ComponentActivity() {
 
                 // Prompt user for storage permission immediately upon entering the app
                 LaunchedEffect(Unit) {
+                    if (intent?.getStringExtra("navigate_to") == "mcp") {
+                        viewModel.openMcpScreen()
+                    }
                     if (!checkStoragePermission()) {
                         requestStoragePermission(permissionLauncher)
                     }
@@ -225,16 +230,14 @@ class MainActivity : ComponentActivity() {
                                     viewModel.showDeleteDialog(files)
                                 },
                                 onShareSelected = {
-                                    val selected = uiState.currentFiles
-                                        .filter { uiState.selectedFilePaths.contains(it.path) }
-                                        .map { File(it.path) }
+                                    val selected = viewModel.getSelectedFiles().map { File(it.path) }
                                     if (selected.isNotEmpty()) {
                                         viewModel.openWifiShare(TransferMode.SEND, selected)
                                         viewModel.clearSelection()
                                     }
                                 },
                                 onCompressSelected = {
-                                    val files = uiState.currentFiles.filter { uiState.selectedFilePaths.contains(it.path) }
+                                    val files = viewModel.getSelectedFiles()
                                     viewModel.showCompressDialog(files)
                                 },
                                 onMenuClick = {
@@ -242,6 +245,15 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onStartSelection = {
                                     viewModel.startSelectionMode()
+                                },
+                                onConfirmSelection = {
+                                    val selected = viewModel.getSelectedFiles().map { File(it.path) }
+                                    if (selected.isNotEmpty()) {
+                                        viewModel.openWifiShare(TransferMode.SEND, selected)
+                                        viewModel.clearSelection()
+                                    } else {
+                                        Toast.makeText(this@MainActivity, "Please select at least 1 file", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             )
                         }
@@ -329,33 +341,47 @@ class MainActivity : ComponentActivity() {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    val count = uiState.selectedFilePaths.size
                                     Button(
                                         onClick = {
-                                            val files = uiState.currentFiles.filter { uiState.selectedFilePaths.contains(it.path) }
-                                            if (files.isNotEmpty()) {
-                                                viewModel.showCompressDialog(files)
+                                            val selected = viewModel.getSelectedFiles().map { File(it.path) }
+                                            if (selected.isNotEmpty()) {
+                                                viewModel.openWifiShare(TransferMode.SEND, selected)
+                                                viewModel.clearSelection()
                                             } else {
-                                                Toast.makeText(this@MainActivity, "Select at least 1 file to compress", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(this@MainActivity, "Please select at least 1 file to send", Toast.LENGTH_SHORT).show()
                                             }
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = TechBluePrimary),
                                         shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier.testTag("selection_compress_button")
+                                        modifier = Modifier.testTag("selection_ok_send_button")
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Archive,
-                                            contentDescription = null,
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Confirm and Share",
                                             modifier = Modifier.size(18.dp)
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        val count = uiState.selectedFilePaths.size
                                         Text(
-                                            text = if (count > 0) "Compress to .ZIP ($count)" else "Compress to .ZIP",
+                                            text = if (count > 0) "OK / Send ($count)" else "OK / Send",
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
 
                                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        IconButton(
+                                            onClick = {
+                                                val files = viewModel.getSelectedFiles()
+                                                if (files.isNotEmpty()) {
+                                                    viewModel.showCompressDialog(files)
+                                                } else {
+                                                    Toast.makeText(this@MainActivity, "Select at least 1 file to compress", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            modifier = Modifier.testTag("selection_compress_button")
+                                        ) {
+                                            Icon(imageVector = Icons.Default.Archive, contentDescription = "Compress")
+                                        }
                                         IconButton(onClick = { viewModel.copySelected() }) {
                                             Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy")
                                         }
@@ -363,7 +389,7 @@ class MainActivity : ComponentActivity() {
                                             Icon(imageVector = Icons.Default.ContentCut, contentDescription = "Cut")
                                         }
                                         IconButton(onClick = {
-                                            val files = uiState.currentFiles.filter { uiState.selectedFilePaths.contains(it.path) }
+                                            val files = viewModel.getSelectedFiles()
                                             if (files.isNotEmpty()) viewModel.showDeleteDialog(files)
                                         }) {
                                             Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
@@ -567,6 +593,7 @@ class MainActivity : ComponentActivity() {
                                             viewModel.showBookmarks(true)
                                         },
                                         onNavigateToWifiShare = { viewModel.openWifiShare(TransferMode.SEND) },
+                                        onNavigateToMcp = { viewModel.openMcpScreen() },
                                         onToggleShowHidden = { viewModel.toggleHiddenFiles(!uiState.showHiddenFiles) },
                                         onToggleConfirmDelete = { viewModel.toggleConfirmBeforeDelete(!uiState.confirmBeforeDelete) },
                                         onToggleShowAddedDate = { viewModel.toggleShowAddedDate(!uiState.showAddedDate) },
@@ -617,6 +644,13 @@ class MainActivity : ComponentActivity() {
                                     viewModel.setTab(NavTab.STORAGE)
                                     viewModel.startSelectionMode()
                                 }
+                            )
+                        }
+
+                        // Remote AI Connector (MCP) Screen Overlay
+                        if (uiState.showMcpScreen) {
+                            McpConnectorScreen(
+                                onNavigateBack = { viewModel.closeMcpScreen() }
                             )
                         }
                     }

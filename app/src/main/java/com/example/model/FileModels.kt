@@ -89,9 +89,9 @@ enum class CompressionLevel(val title: String) {
 }
 
 data class StorageBreakdown(
-    val totalBytes: Long = 128L * 1024 * 1024 * 1024,
-    val usedBytes: Long = 87L * 1024 * 1024 * 1024 + 400L * 1024 * 1024,
-    val freeBytes: Long = 40L * 1024 * 1024 * 1024 + 600L * 1024 * 1024,
+    val totalBytes: Long = 0L,
+    val usedBytes: Long = 0L,
+    val freeBytes: Long = 0L,
     val categoryBytes: Map<FileCategory, Long> = emptyMap(),
     val categoryCounts: Map<FileCategory, Int> = emptyMap(),
     val largestFiles: List<FileItem> = emptyList()

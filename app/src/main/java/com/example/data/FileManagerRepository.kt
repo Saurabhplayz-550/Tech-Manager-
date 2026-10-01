@@ -1,9 +1,12 @@
 package com.example.data
 
 import android.content.Context
+import android.app.usage.StorageStatsManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import android.os.storage.StorageManager
 import android.provider.MediaStore
 import com.example.model.ArchiveType
 import com.example.model.FileCategory
@@ -436,134 +439,215 @@ class FileManagerRepository(
 
     suspend fun getFilesByCategory(category: FileCategory): List<FileItem> = withContext(Dispatchers.IO) {
         val result = mutableListOf<FileItem>()
-        suspend fun scanDir(dir: File, depth: Int = 0) {
-            if (depth > 5) return
-            val files = dir.listFiles() ?: return
-            for (f in files) {
-                if (f.isDirectory) {
-                    if (!f.name.startsWith(".")) {
-                        scanDir(f, depth + 1)
+        when (category) {
+            FileCategory.IMAGES -> {
+                result.addAll(queryMediaStore(MediaStore.Images.Media.EXTERNAL_CONTENT_URI))
+                if (result.isEmpty()) {
+                    scanPublicFolderFiles(result, listOf(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                    )) { it.isImage }
+                }
+            }
+            FileCategory.VIDEOS -> {
+                result.addAll(queryMediaStore(MediaStore.Video.Media.EXTERNAL_CONTENT_URI))
+                if (result.isEmpty()) {
+                    scanPublicFolderFiles(result, listOf(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
+                    )) { it.isVideo }
+                }
+            }
+            FileCategory.AUDIO -> {
+                result.addAll(queryMediaStore(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI))
+                if (result.isEmpty()) {
+                    scanPublicFolderFiles(result, listOf(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PODCASTS)
+                    )) { it.isAudio }
+                }
+            }
+            FileCategory.DOCUMENTS -> {
+                val docSelection = "${MediaStore.Files.FileColumns.DATA} LIKE '%.pdf' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.doc' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.docx' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.txt' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.xls' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.xlsx' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.ppt' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.pptx' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.csv' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.json' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.md'"
+                result.addAll(queryMediaStore(MediaStore.Files.getContentUri("external"), selection = docSelection))
+                if (result.isEmpty()) {
+                    scanPublicFolderFiles(result, listOf(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    )) { it.isDocument }
+                }
+            }
+            FileCategory.APKS -> {
+                val apkSelection = "${MediaStore.Files.FileColumns.DATA} LIKE '%.apk' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.xapk'"
+                result.addAll(queryMediaStore(MediaStore.Files.getContentUri("external"), selection = apkSelection))
+                if (result.isEmpty()) {
+                    scanPublicFolderFiles(result, listOf(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    )) { it.isApk }
+                }
+            }
+            FileCategory.DOWNLOADS -> {
+                val downloadFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (downloadFolder.exists()) {
+                    downloadFolder.listFiles()?.filter { it.isFile }?.forEach { f ->
+                        result.add(createFastFileItem(f))
                     }
-                } else {
-                    val item = getFileItem(f)
-                    val matches = when (category) {
-                        FileCategory.IMAGES -> item.isImage
-                        FileCategory.VIDEOS -> item.isVideo
-                        FileCategory.AUDIO -> item.isAudio
-                        FileCategory.DOCUMENTS -> item.isDocument
-                        FileCategory.APKS -> item.isApk
-                        FileCategory.ARCHIVES -> item.isArchive
-                        FileCategory.DOWNLOADS -> f.parentFile?.name.equals("Download", ignoreCase = true)
-                        FileCategory.OTHER -> !item.isImage && !item.isVideo && !item.isAudio && !item.isDocument && !item.isApk && !item.isArchive
-                    }
-                    if (matches) {
+                }
+                val msDownloads = queryMediaStore(MediaStore.Files.getContentUri("external"), selection = "${MediaStore.Files.FileColumns.DATA} LIKE '%/Download/%'")
+                for (item in msDownloads) {
+                    if (result.none { it.path == item.path }) {
                         result.add(item)
                     }
                 }
             }
-        }
-        val ext = Environment.getExternalStorageDirectory()
-        if (ext.exists()) {
-            scanDir(ext)
-        }
-        result.sortedByDescending { it.lastModified }
-    }
-
-    suspend fun getRecentFiles(limit: Int = 10): List<FileItem> = withContext(Dispatchers.IO) {
-        val all = mutableListOf<FileItem>()
-        suspend fun scanDir(dir: File, depth: Int = 0) {
-            if (depth > 4) return
-            val files = dir.listFiles() ?: return
-            for (f in files) {
-                if (f.isDirectory) {
-                    if (!f.name.startsWith(".")) scanDir(f, depth + 1)
-                } else {
-                    all.add(getFileItem(f))
+            FileCategory.ARCHIVES -> {
+                val archiveSelection = "${MediaStore.Files.FileColumns.DATA} LIKE '%.zip' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.rar' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.7z' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.tar' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.gz'"
+                result.addAll(queryMediaStore(MediaStore.Files.getContentUri("external"), selection = archiveSelection))
+                if (result.isEmpty()) {
+                    scanPublicFolderFiles(result, listOf(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+                    )) { it.isArchive }
                 }
             }
-        }
-        val ext = Environment.getExternalStorageDirectory()
-        if (ext.exists()) {
-            scanDir(ext)
-        }
-        all.sortedByDescending { it.lastModified }.take(limit)
-    }
-
-    suspend fun getRecentlyAdded(limit: Int = 10): List<FileItem> = withContext(Dispatchers.IO) {
-        val all = mutableListOf<FileItem>()
-        suspend fun scanDir(dir: File, depth: Int = 0) {
-            if (depth > 4) return
-            val files = dir.listFiles() ?: return
-            for (f in files) {
-                if (f.isDirectory) {
-                    if (!f.name.startsWith(".")) scanDir(f, depth + 1)
-                } else {
-                    val item = getFileItem(f)
-                    // Only include if addedDate is genuinely available
-                    if (item.addedDate != null && item.addedDate > 0L) {
-                        all.add(item)
+            FileCategory.OTHER -> {
+                val downloadFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (downloadFolder.exists()) {
+                    downloadFolder.listFiles()?.filter { it.isFile }?.forEach { f ->
+                        val item = createFastFileItem(f)
+                        if (!item.isImage && !item.isVideo && !item.isAudio && !item.isDocument && !item.isApk && !item.isArchive) {
+                            result.add(item)
+                        }
                     }
                 }
             }
         }
-        val ext = Environment.getExternalStorageDirectory()
-        if (ext.exists()) {
-            scanDir(ext)
+        result.distinctBy { it.path }.sortedByDescending { it.lastModified }
+    }
+
+    suspend fun getRecentFiles(limit: Int = 15): List<FileItem> = withContext(Dispatchers.IO) {
+        val list = queryMediaStore(
+            MediaStore.Files.getContentUri("external"),
+            sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC",
+            limit = limit
+        )
+        if (list.isNotEmpty()) {
+            list
+        } else {
+            val fallback = mutableListOf<FileItem>()
+            val dirs = listOf(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+            )
+            for (d in dirs) {
+                if (d.exists()) {
+                    d.listFiles()?.filter { it.isFile }?.forEach { fallback.add(createFastFileItem(it)) }
+                }
+            }
+            fallback.sortedByDescending { it.lastModified }.take(limit)
         }
-        all.sortedByDescending { it.addedDate ?: 0L }.take(limit)
+    }
+
+    suspend fun getRecentlyAdded(limit: Int = 15): List<FileItem> = withContext(Dispatchers.IO) {
+        val list = queryMediaStore(
+            MediaStore.Files.getContentUri("external"),
+            sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC",
+            limit = limit
+        )
+        if (list.isNotEmpty()) {
+            list
+        } else {
+            getRecentFiles(limit)
+        }
     }
 
     suspend fun getStorageBreakdown(): StorageBreakdown = withContext(Dispatchers.IO) {
-        var totalBytes = 128L * 1024 * 1024 * 1024
-        var freeBytes = 40L * 1024 * 1024 * 1024
-        var usedBytes = 87L * 1024 * 1024 * 1024 + 400L * 1024 * 1024
+        var totalBytes = 0L
+        var freeBytes = 0L
+        var usedBytes = 0L
 
         try {
-            val path = Environment.getDataDirectory()
-            val stat = StatFs(path.path)
-            val blockSize = stat.blockSizeLong
-            val totalBlocks = stat.blockCountLong
-            val availableBlocks = stat.availableBlocksLong
-
-            totalBytes = totalBlocks * blockSize
-            freeBytes = availableBlocks * blockSize
-            usedBytes = totalBytes - freeBytes
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val storageStatsManager = context.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
+                if (storageStatsManager != null) {
+                    val total = storageStatsManager.getTotalBytes(StorageManager.UUID_DEFAULT)
+                    val free = storageStatsManager.getFreeBytes(StorageManager.UUID_DEFAULT)
+                    if (total > 0L) {
+                        totalBytes = total
+                        freeBytes = free
+                        usedBytes = (total - free).coerceAtLeast(0L)
+                    }
+                }
+            }
         } catch (_: Exception) {}
+
+        if (totalBytes <= 0L) {
+            try {
+                val extPath = Environment.getExternalStorageDirectory().path
+                val stat = StatFs(extPath)
+                val blockSize = stat.blockSizeLong
+                totalBytes = stat.blockCountLong * blockSize
+                freeBytes = stat.availableBlocksLong * blockSize
+                usedBytes = (totalBytes - freeBytes).coerceAtLeast(0L)
+            } catch (_: Exception) {
+                try {
+                    val stat = StatFs(Environment.getDataDirectory().path)
+                    val blockSize = stat.blockSizeLong
+                    totalBytes = stat.blockCountLong * blockSize
+                    freeBytes = stat.availableBlocksLong * blockSize
+                    usedBytes = (totalBytes - freeBytes).coerceAtLeast(0L)
+                } catch (_: Exception) {}
+            }
+        }
 
         val categoryBytes = mutableMapOf<FileCategory, Long>()
         val categoryCounts = mutableMapOf<FileCategory, Int>()
-        val allFiles = mutableListOf<FileItem>()
 
-        suspend fun scanForStats(dir: File, depth: Int = 0) {
-            if (depth > 4) return
-            val files = dir.listFiles() ?: return
-            for (f in files) {
-                if (f.isDirectory) {
-                    if (!f.name.startsWith(".")) scanForStats(f, depth + 1)
-                } else {
-                    val item = getFileItem(f)
-                    allFiles.add(item)
-                    val cat = when {
-                        item.isImage -> FileCategory.IMAGES
-                        item.isVideo -> FileCategory.VIDEOS
-                        item.isAudio -> FileCategory.AUDIO
-                        item.isDocument -> FileCategory.DOCUMENTS
-                        item.isApk -> FileCategory.APKS
-                        item.isArchive -> FileCategory.ARCHIVES
-                        f.parentFile?.name.equals("Download", ignoreCase = true) -> FileCategory.DOWNLOADS
-                        else -> FileCategory.OTHER
-                    }
-                    categoryBytes[cat] = (categoryBytes[cat] ?: 0L) + item.size
-                    categoryCounts[cat] = (categoryCounts[cat] ?: 0) + 1
-                }
-            }
-        }
-        val ext = Environment.getExternalStorageDirectory()
-        if (ext.exists()) {
-            scanForStats(ext)
-        }
+        // 1. Images
+        val imageStats = getCategoryStats(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        categoryCounts[FileCategory.IMAGES] = imageStats.first
+        categoryBytes[FileCategory.IMAGES] = imageStats.second
 
-        val largest = allFiles.sortedByDescending { it.size }.take(10)
+        // 2. Videos
+        val videoStats = getCategoryStats(MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+        categoryCounts[FileCategory.VIDEOS] = videoStats.first
+        categoryBytes[FileCategory.VIDEOS] = videoStats.second
+
+        // 3. Audio
+        val audioStats = getCategoryStats(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+        categoryCounts[FileCategory.AUDIO] = audioStats.first
+        categoryBytes[FileCategory.AUDIO] = audioStats.second
+
+        // 4. Documents
+        val docSelection = "${MediaStore.Files.FileColumns.DATA} LIKE '%.pdf' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.doc' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.docx' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.txt' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.xls' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.xlsx' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.ppt' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.pptx' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.csv' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.json'"
+        val docStats = getCategoryStats(MediaStore.Files.getContentUri("external"), docSelection)
+        categoryCounts[FileCategory.DOCUMENTS] = docStats.first
+        categoryBytes[FileCategory.DOCUMENTS] = docStats.second
+
+        // 5. APKs
+        val apkSelection = "${MediaStore.Files.FileColumns.DATA} LIKE '%.apk' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.xapk'"
+        val apkStats = getCategoryStats(MediaStore.Files.getContentUri("external"), apkSelection)
+        categoryCounts[FileCategory.APKS] = apkStats.first
+        categoryBytes[FileCategory.APKS] = apkStats.second
+
+        // 6. Downloads
+        val downloadFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val downloadDirectFiles = if (downloadFolder.exists()) downloadFolder.listFiles()?.filter { it.isFile } ?: emptyList() else emptyList()
+        val downloadStats = getCategoryStats(MediaStore.Files.getContentUri("external"), "${MediaStore.Files.FileColumns.DATA} LIKE '%/Download/%'")
+        val dlCount = maxOf(downloadDirectFiles.size, downloadStats.first)
+        val dlSize = if (downloadDirectFiles.isNotEmpty()) downloadDirectFiles.sumOf { it.length() } else downloadStats.second
+        categoryCounts[FileCategory.DOWNLOADS] = dlCount
+        categoryBytes[FileCategory.DOWNLOADS] = dlSize
+
+        // 7. Archives
+        val archiveSelection = "${MediaStore.Files.FileColumns.DATA} LIKE '%.zip' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.rar' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.7z' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.tar' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.gz'"
+        val archiveStats = getCategoryStats(MediaStore.Files.getContentUri("external"), archiveSelection)
+        categoryCounts[FileCategory.ARCHIVES] = archiveStats.first
+        categoryBytes[FileCategory.ARCHIVES] = archiveStats.second
+
+        // Fallbacks for any folders on disk if MediaStore had 0
+        checkPublicDirectoryFallbacks(categoryCounts, categoryBytes)
 
         StorageBreakdown(
             totalBytes = totalBytes,
@@ -571,7 +655,215 @@ class FileManagerRepository(
             freeBytes = freeBytes,
             categoryBytes = categoryBytes,
             categoryCounts = categoryCounts,
-            largestFiles = largest
+            largestFiles = emptyList()
+        )
+    }
+
+    private fun queryMediaStore(
+        uri: Uri,
+        selection: String? = null,
+        selectionArgs: Array<String>? = null,
+        sortOrder: String? = null,
+        limit: Int = 1000
+    ): List<FileItem> {
+        val list = mutableListOf<FileItem>()
+        try {
+            val projection = arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.DATA,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.SIZE,
+                MediaStore.MediaColumns.DATE_MODIFIED,
+                MediaStore.MediaColumns.DATE_ADDED
+            )
+            val cursor = context.contentResolver.query(
+                uri,
+                projection,
+                selection,
+                selectionArgs,
+                sortOrder ?: "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+            )
+            cursor?.use { c ->
+                val dataCol = c.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val nameCol = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                val sizeCol = c.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                val modCol = c.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                val addCol = c.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
+
+                var count = 0
+                while (c.moveToNext() && count < limit) {
+                    val path = if (dataCol != -1) c.getString(dataCol) else null
+                    if (path.isNullOrEmpty()) continue
+                    val file = File(path)
+                    if (!file.exists()) continue
+
+                    val name = if (nameCol != -1) c.getString(nameCol) ?: file.name else file.name
+                    val size = if (sizeCol != -1) c.getLong(sizeCol) else file.length()
+                    val modSec = if (modCol != -1) c.getLong(modCol) else 0L
+                    val addSec = if (addCol != -1) c.getLong(addCol) else 0L
+
+                    val modDate = if (modSec > 0) modSec * 1000L else file.lastModified()
+                    val addDate = if (addSec > 0) addSec * 1000L else modDate
+
+                    val ext = file.extension.lowercase()
+                    val archiveType = ArchiveType.fromExtension(ext)
+
+                    list.add(
+                        FileItem(
+                            id = file.absolutePath,
+                            name = name,
+                            path = file.absolutePath,
+                            isDirectory = false,
+                            size = if (size > 0) size else file.length(),
+                            lastModified = modDate,
+                            addedDate = addDate,
+                            createdDate = addDate,
+                            extension = ext,
+                            itemCount = 0,
+                            isArchive = archiveType != null,
+                            archiveType = archiveType
+                        )
+                    )
+                    count++
+                }
+            }
+        } catch (_: Exception) {}
+        return list
+    }
+
+    private fun getCategoryStats(
+        uri: Uri,
+        selection: String? = null,
+        selectionArgs: Array<String>? = null
+    ): Pair<Int, Long> {
+        var count = 0
+        var totalSize = 0L
+        try {
+            val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.SIZE)
+            context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
+                count = cursor.count
+                val sizeCol = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                if (sizeCol != -1) {
+                    var read = 0
+                    while (cursor.moveToNext() && read < 200) {
+                        totalSize += cursor.getLong(sizeCol)
+                        read++
+                    }
+                    if (count > read && read > 0) {
+                        totalSize = (totalSize / read) * count
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return Pair(count, totalSize)
+    }
+
+    private fun scanPublicFolderFiles(
+        outList: MutableList<FileItem>,
+        dirs: List<File>,
+        predicate: (FileItem) -> Boolean
+    ) {
+        for (dir in dirs) {
+            if (!dir.exists()) continue
+            val files = dir.listFiles() ?: continue
+            for (f in files) {
+                if (f.isFile && !f.name.startsWith(".")) {
+                    val item = createFastFileItem(f)
+                    if (predicate(item)) {
+                        outList.add(item)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun checkPublicDirectoryFallbacks(
+        counts: MutableMap<FileCategory, Int>,
+        bytes: MutableMap<FileCategory, Long>
+    ) {
+        if ((counts[FileCategory.IMAGES] ?: 0) == 0) {
+            val imageDirs = listOf(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+            )
+            var c = 0
+            var s = 0L
+            for (d in imageDirs) {
+                d.listFiles()?.filter { it.isFile }?.forEach { f ->
+                    val ext = f.extension.lowercase()
+                    if (ext in listOf("jpg", "jpeg", "png", "webp", "gif", "bmp")) {
+                        c++
+                        s += f.length()
+                    }
+                }
+            }
+            if (c > 0) {
+                counts[FileCategory.IMAGES] = c
+                bytes[FileCategory.IMAGES] = s
+            }
+        }
+
+        if ((counts[FileCategory.VIDEOS] ?: 0) == 0) {
+            val videoDirs = listOf(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
+            )
+            var c = 0
+            var s = 0L
+            for (d in videoDirs) {
+                d.listFiles()?.filter { it.isFile }?.forEach { f ->
+                    val ext = f.extension.lowercase()
+                    if (ext in listOf("mp4", "mkv", "avi", "mov", "webm", "3gp")) {
+                        c++
+                        s += f.length()
+                    }
+                }
+            }
+            if (c > 0) {
+                counts[FileCategory.VIDEOS] = c
+                bytes[FileCategory.VIDEOS] = s
+            }
+        }
+
+        if ((counts[FileCategory.AUDIO] ?: 0) == 0) {
+            val audioDirs = listOf(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PODCASTS)
+            )
+            var c = 0
+            var s = 0L
+            for (d in audioDirs) {
+                d.listFiles()?.filter { it.isFile }?.forEach { f ->
+                    val ext = f.extension.lowercase()
+                    if (ext in listOf("mp3", "m4a", "wav", "flac", "aac", "ogg")) {
+                        c++
+                        s += f.length()
+                    }
+                }
+            }
+            if (c > 0) {
+                counts[FileCategory.AUDIO] = c
+                bytes[FileCategory.AUDIO] = s
+            }
+        }
+    }
+
+    private fun createFastFileItem(f: File): FileItem {
+        val ext = f.extension.lowercase()
+        val archiveType = ArchiveType.fromExtension(ext)
+        return FileItem(
+            id = f.absolutePath,
+            name = f.name,
+            path = f.absolutePath,
+            isDirectory = f.isDirectory,
+            size = if (f.isDirectory) 0L else f.length(),
+            lastModified = f.lastModified(),
+            addedDate = f.lastModified(),
+            createdDate = f.lastModified(),
+            extension = ext,
+            itemCount = if (f.isDirectory) (f.listFiles()?.size ?: 0) else 0,
+            isArchive = archiveType != null,
+            archiveType = archiveType
         )
     }
 

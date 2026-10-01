@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
@@ -64,6 +65,7 @@ fun MoreScreen(
     onNavigateToStorageAnalysis: () -> Unit,
     onNavigateToBookmarks: () -> Unit,
     onNavigateToWifiShare: () -> Unit = {},
+    onNavigateToMcp: () -> Unit = {},
     onToggleShowHidden: () -> Unit,
     onToggleConfirmDelete: () -> Unit,
     onToggleShowAddedDate: () -> Unit,
@@ -119,6 +121,13 @@ fun MoreScreen(
                         title = "Fast Share (Wi-Fi / Hotspot)",
                         subtitle = "Send & receive files directly via QR code or 6-digit code",
                         onClick = onNavigateToWifiShare
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    MoreClickableItem(
+                        icon = Icons.Default.SmartToy,
+                        title = "Remote AI Connector (MCP)",
+                        subtitle = "Expose Model Context Protocol tools to Claude & AI assistants over the Internet",
+                        onClick = onNavigateToMcp
                     )
                 }
             }

@@ -127,11 +127,18 @@ fun CategoriesScreen(
                                 contentDescription = "Back to categories"
                             )
                         }
-                        Text(
-                            text = "${selectedCategory.title} (${categoryFiles.size})",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = selectedCategory.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "${categoryFiles.size} items",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -152,13 +159,20 @@ fun CategoriesScreen(
                     }
                 } else {
                     items(categoryFiles, key = { "cat_${it.path}" }) { item ->
+                        val isSelected = uiState.selectedFilePaths.contains(item.path)
                         FileListItem(
                             item = item,
-                            isSelected = false,
-                            isSelectionMode = false,
+                            isSelected = isSelected,
+                            isSelectionMode = uiState.isSelectionMode,
                             showAddedDate = true,
                             showModifiedDate = true,
-                            onClick = { onFileClick(item) },
+                            onClick = {
+                                if (uiState.isSelectionMode) {
+                                    onFileLongClick(item)
+                                } else {
+                                    onFileClick(item)
+                                }
+                            },
                             onLongClick = { onFileLongClick(item) },
                             onShare = { onShareFile(item) },
                             onRename = { onRenameFile(item) },

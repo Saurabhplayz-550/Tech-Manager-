@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
@@ -565,9 +566,34 @@ fun SenderView(
     onRequestCameraPermission: () -> Unit,
     onPickMoreFiles: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var manualPinInput by remember { mutableStateOf("") }
     var manualIpInput by remember { mutableStateOf("") }
     var showAdvancedIp by remember { mutableStateOf(false) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            val files = uris.mapNotNull { uri -> resolveUriToFile(context, uri) }
+            if (files.isNotEmpty()) {
+                transferManager.addFilesToSend(files)
+                Toast.makeText(context, "Added ${files.size} items to send queue", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val docPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            val files = uris.mapNotNull { uri -> resolveUriToFile(context, uri) }
+            if (files.isNotEmpty()) {
+                transferManager.addFilesToSend(files)
+                Toast.makeText(context, "Added ${files.size} files to send queue", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -592,21 +618,57 @@ fun SenderView(
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 3 Easy options to pick files
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         OutlinedButton(
                             onClick = onPickMoreFiles,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                            shape = RoundedCornerShape(8.dp)
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Folders", style = MaterialTheme.typography.labelSmall)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.InsertDriveFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Photos", style = MaterialTheme.typography.labelSmall)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                docPickerLauncher.launch(arrayOf("*/*"))
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add Files", style = MaterialTheme.typography.labelSmall)
+                            Text("Documents", style = MaterialTheme.typography.labelSmall)
                         }
                     }
 
                     if (transferManager.selectedFilesToSend.isEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "No files chosen yet. Tap '+ Add Files' to choose files to send.",
+                            text = "No files chosen yet. Tap 'Folders', 'Photos', or 'Documents' above to select files to send.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -873,4 +935,44 @@ fun SenderView(
             }
         }
     }
+}
+
+private fun resolveUriToFile(context: Context, uri: Uri): java.io.File? {
+    try {
+        val proj = arrayOf(android.provider.MediaStore.MediaColumns.DATA, android.provider.OpenableColumns.DISPLAY_NAME)
+        context.contentResolver.query(uri, proj, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val dataIdx = cursor.getColumnIndex(android.provider.MediaStore.MediaColumns.DATA)
+                if (dataIdx != -1) {
+                    val path = cursor.getString(dataIdx)
+                    if (!path.isNullOrEmpty()) {
+                        val f = java.io.File(path)
+                        if (f.exists()) return f
+                    }
+                }
+            }
+        }
+    } catch (_: Exception) {}
+
+    try {
+        var name = "picked_${System.currentTimeMillis()}"
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIdx != -1) {
+                    val n = cursor.getString(nameIdx)
+                    if (!n.isNullOrEmpty()) name = n
+                }
+            }
+        }
+        val target = java.io.File(context.cacheDir, name)
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            target.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+        if (target.exists() && target.length() > 0) return target
+    } catch (_: Exception) {}
+
+    return null
 }

@@ -67,15 +67,7 @@ fun CategoryCard(
         FileCategory.OTHER -> Triple(TechBlueLight, TechBluePrimary, Icons.Default.Description)
     }
 
-    val displayCount = when (category) {
-        FileCategory.IMAGES -> if (itemCount > 0) "$itemCount items" else "2,450 items"
-        FileCategory.VIDEOS -> if (itemCount > 0) "$itemCount items" else "320 items"
-        FileCategory.AUDIO -> if (itemCount > 0) "$itemCount items" else "180 items"
-        FileCategory.DOCUMENTS -> if (itemCount > 0) "$itemCount items" else "620 items"
-        FileCategory.APKS -> if (itemCount > 0) "$itemCount items" else "48 items"
-        FileCategory.DOWNLOADS -> if (itemCount > 0) "$itemCount items" else "112 items"
-        else -> "$itemCount items"
-    }
+    val displayCount = "$itemCount ${if (itemCount == 1) "item" else "items"}"
 
     Surface(
         modifier = modifier
