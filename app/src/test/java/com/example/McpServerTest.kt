@@ -123,6 +123,25 @@ class McpServerTest {
         val listJson = JSONObject(listResponse)
         val tools = listJson.getJSONObject("result").getJSONArray("tools")
         assertEquals(4, tools.length())
+
+        // 4. Success with token query parameter (?token=XXXX) without any auth headers
+        val (queryCode, queryResponse) = server.handleMcpRequest(
+            headers = emptyMap(),
+            body = initRequest,
+            path = "/mcp?token=$authToken"
+        )
+        assertEquals(200, queryCode)
+        val queryJson = JSONObject(queryResponse)
+        assertEquals("2.0", queryJson.getString("jsonrpc"))
+        assertTrue(queryJson.has("result"))
+
+        // 5. Rejected when query param has invalid token and no valid header
+        val (invalidQueryCode, _) = server.handleMcpRequest(
+            headers = emptyMap(),
+            body = initRequest,
+            path = "/mcp?token=bad_token_123"
+        )
+        assertEquals(401, invalidQueryCode)
     }
 
     @Test
@@ -260,6 +279,24 @@ class McpServerTest {
             val listJson = JSONObject(listResponse)
             val tools = listJson.getJSONObject("result").getJSONArray("tools")
             assertEquals(4, tools.length())
+
+            // 4. HTTP Request using query param ?token=... without any auth headers
+            val connQueryAuth = (URL("$serverUrl?token=$authToken").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                doOutput = true
+                outputStream.write(initRequest.toByteArray())
+            }
+            assertEquals(200, connQueryAuth.responseCode)
+
+            // 5. HTTP Request with wrong query param returns 401
+            val connBadQuery = (URL("$serverUrl?token=wrong_secret").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                doOutput = true
+                outputStream.write(initRequest.toByteArray())
+            }
+            assertEquals(401, connBadQuery.responseCode)
 
         } finally {
             server.stop()

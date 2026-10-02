@@ -15,6 +15,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.URLDecoder
 
 class McpServer(
     private val context: Context,
@@ -71,21 +72,35 @@ class McpServer(
 
     /**
      * Shared request handling logic extracted for both local HTTP server and WebSocket relay client.
-     * Validates X-Auth-Token (or Authorization: Bearer <token>) and processes JSON-RPC 2.0 requests.
+     * Validates authentication via EITHER:
+     * 1. Header: X-Auth-Token (or Authorization: Bearer <token>)
+     * 2. Query parameter: "token" on path (e.g. /mcp?token=XXXX)
+     *
+     * Then processes JSON-RPC 2.0 requests.
      * Returns Pair(statusCode, responseJsonBody).
      */
-    suspend fun handleMcpRequest(headers: Map<String, String>, body: String): Pair<Int, String> {
+    suspend fun handleMcpRequest(
+        headers: Map<String, String>,
+        body: String,
+        path: String = "/mcp"
+    ): Pair<Int, String> {
         val expectedToken = authTokenProvider()
 
-        // Normalize header keys for case-insensitive lookup
+        // 1. Check Header Token
         val normalizedHeaders = headers.mapKeys { it.key.lowercase() }
-        val providedToken = normalizedHeaders["x-auth-token"]
+        val headerToken = normalizedHeaders["x-auth-token"]
             ?: normalizedHeaders["authorization"]?.removePrefix("Bearer ")?.trim()
 
-        if (providedToken.isNullOrEmpty() || providedToken != expectedToken) {
-            onLog("Authentication rejected: invalid or missing X-Auth-Token")
+        // 2. Check Query Parameter Token (from path+query, e.g. /mcp?token=XXXX)
+        val queryToken = extractQueryParam(path, "token")
+
+        val isAuthenticated = (!headerToken.isNullOrEmpty() && headerToken == expectedToken) ||
+                (!queryToken.isNullOrEmpty() && queryToken == expectedToken)
+
+        if (!isAuthenticated) {
+            onLog("Authentication rejected: invalid or missing X-Auth-Token header and token query parameter")
             val errorJson = JSONObject().apply {
-                put("error", "Unauthorized: Invalid or missing X-Auth-Token header")
+                put("error", "Unauthorized: Invalid or missing X-Auth-Token header or ?token= query parameter")
                 put("statusCode", 401)
             }.toString()
             return Pair(401, errorJson)
@@ -93,6 +108,30 @@ class McpServer(
 
         val responseJson = processJsonRpcRequest(body)
         return Pair(200, responseJson)
+    }
+
+    /**
+     * Helper to extract a query parameter value from a URI path+query string.
+     */
+    private fun extractQueryParam(fullPath: String, paramName: String): String? {
+        val queryIndex = fullPath.indexOf('?')
+        if (queryIndex == -1 || queryIndex == fullPath.length - 1) return null
+
+        val queryString = fullPath.substring(queryIndex + 1)
+        val pairs = queryString.split("&")
+        for (pair in pairs) {
+            val idx = pair.indexOf("=")
+            val key = if (idx > 0) pair.substring(0, idx) else pair
+            if (key.equals(paramName, ignoreCase = true)) {
+                val value = if (idx > 0 && idx < pair.length - 1) pair.substring(idx + 1) else ""
+                return try {
+                    URLDecoder.decode(value, "UTF-8")
+                } catch (_: Exception) {
+                    value
+                }
+            }
+        }
+        return null
     }
 
     private suspend fun handleClient(socket: Socket) = withContext(Dispatchers.IO) {
@@ -115,7 +154,8 @@ class McpServer(
             }
 
             val method = parts[0]
-            val path = parts[1].substringBefore("?")
+            val rawPathWithQuery = parts[1]
+            val basePath = rawPathWithQuery.substringBefore("?")
 
             // Read headers
             val headers = mutableMapOf<String, String>()
@@ -142,8 +182,8 @@ class McpServer(
                 return@withContext
             }
 
-            // Path must be /mcp
-            if (path != "/mcp" && path != "/mcp/") {
+            // Path must be /mcp (stripping query string before comparing)
+            if (basePath != "/mcp" && basePath != "/mcp/") {
                 sendErrorResponse(outputStream, 404, "Not Found. MCP endpoint is at /mcp")
                 socket.close()
                 return@withContext
@@ -171,7 +211,7 @@ class McpServer(
             }
 
             val requestBody = bodyBuilder.toString()
-            val (statusCode, responseBody) = handleMcpRequest(headers, requestBody)
+            val (statusCode, responseBody) = handleMcpRequest(headers, requestBody, rawPathWithQuery)
 
             if (statusCode == 200) {
                 sendJsonResponse(outputStream, 200, responseBody)

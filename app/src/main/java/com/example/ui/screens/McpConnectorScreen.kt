@@ -523,7 +523,7 @@ fun McpConnectorScreen(
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Text(
-                                text = "3. Add an HTTP Header: Name 'X-Auth-Token' and value set to your Token.",
+                                text = "3. Authenticate using EITHER method:\n   • HTTP Header: Name 'X-Auth-Token' and value set to your Token\n   • Query Parameter: Append '?token=YOUR_TOKEN' to the URL (e.g. https://xxxx.deno.dev/mcp?token=YOUR_TOKEN)",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Text(

@@ -169,8 +169,8 @@ class RelayWebSocketClient(
                     }
                 }
 
-                // Call shared request handling on McpServer
-                val (statusCode, responseBody) = mcpServer.handleMcpRequest(headers, body)
+                // Call shared request handling on McpServer (passing path to support ?token= param)
+                val (statusCode, responseBody) = mcpServer.handleMcpRequest(headers, body, path)
 
                 // Return response as JSON: { id, status, body }
                 val responseJson = JSONObject().apply {
